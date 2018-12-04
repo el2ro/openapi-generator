@@ -45,27 +45,32 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
 
     public static final String CODEGEN_VENDOR_EXTENSION_KEY = "x-postgresqlSchema";
     public static final String DEFAULT_DATABASE_NAME = "defaultDatabaseName";
+    public static final String DEFAULT_DATABASE_SCHEMA = "public";
     public static final String JSON_DATA_TYPE_ENABLED = "jsonDataTypeEnabled";
     public static final Integer ENUM_MAX_ELEMENTS = 65535;
     public static final Integer IDENTIFIER_MAX_LENGTH = 64;
 
     protected Vector<String> postgresqlNumericTypes = new Vector<String>(Arrays.asList(
-            "BIGINT", "BIT", "BOOL", "BOOLEAN", "DEC", "DECIMAL", "DOUBLE", "DOUBLE PRECISION", "FIXED", "FLOAT", "INT", "INTEGER", "MEDIUMINT", "NUMERIC", "REAL", "SMALLINT", "TINYINT"
+               "BIGINT", "BIGSERIAL", "BIT", "BOOLEAN", "DEC", "DECIMAL", "DOUBLE", "DOUBLE PRECISION", "FLOAT", "INT", "INTEGER", "MONEY", "NUMERIC", "REAL", "SERIAL", "SMALLINT"
+            // "BIGINT", "BIT", "BOOL", "BOOLEAN", "DEC", "DECIMAL", "DOUBLE", "DOUBLE PRECISION", "FIXED", "FLOAT", "INT", "INTEGER", "MEDIUMINT", "NUMERIC", "REAL", "SMALLINT", "TINYINT"
     ));
 
     protected Vector<String> postgresqlDateAndTimeTypes = new Vector<String>(Arrays.asList(
-            "DATE", "DATETIME", "TIME", "TIMESTAMP", "YEAR"
+            "DATE", "TIME", "TIMESTAMP"
     ));
 
     protected Vector<String> postgresqlStringTypes = new Vector<String>(Arrays.asList(
-            "BINARY", "BLOB", "CHAR", "CHAR BYTE", "CHARACTER", "ENUM", "LONGBLOB", "LONGTEXT", "MEDIUMBLOB", "MEDIUMTEXT", "SET", "TEXT", "TINYBLOB", "TINYTEXT", "VARBINARY", "VARCHAR"
+            "BYTEA", "CHAR", "CHARACTER", "CHARACTER VARYING", "ENUM", "SET", "TEXT", "VARCHAR"
+            //"BINARY", "BLOB", "CHAR", "CHAR BYTE", "CHARACTER", "ENUM", "LONGBLOB", "LONGTEXT", "MEDIUMBLOB", "MEDIUMTEXT", "SET", "TEXT", "TINYBLOB", "TINYTEXT", "VARBINARY", "VARCHAR"
     ));
 
     protected Vector<String> postgresqlSpatialTypes = new Vector<String>(Arrays.asList(
-            "GEOMETRY", "GEOMETRYCOLLECTION", "LINESTRING", "MULTILINESTRING", "MULTIPOINT", "MULTIPOLYGON", "POINT", "POLYGON"
+            "BOX", "CIRCLE", "LSEG", "PATH", "POINT", "POLYGON"
+            //"GEOMETRY", "GEOMETRYCOLLECTION", "LINESTRING", "MULTILINESTRING", "MULTIPOINT", "MULTIPOLYGON", "POINT", "POLYGON"
     ));
 
     protected String defaultDatabaseName = "", databaseNamePrefix = "", databaseNameSuffix = "_db";
+    protected String defaultDatabaseSchema = "public";
     protected String tableNamePrefix = "tbl_", tableNameSuffix = "";
     protected String columnNamePrefix = "col_", columnNameSuffix = "";
     protected Boolean jsonDataTypeEnabled = true;
@@ -180,7 +185,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
 
     @Override
     public String getHelp() {
-        return "Generates a MySQL schema based on the model or schema defined in the OpenAPI specification (v2, v3).";
+        return "Generates a Postgresql schema based on the model or schema defined in the OpenAPI specification (v2, v3).";
     }
 
     @Override
@@ -229,6 +234,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                 modelVendorExtensions.put(CODEGEN_VENDOR_EXTENSION_KEY, postgresqlSchema);
                 postgresqlSchema.put("tableDefinition", tableDefinition);
                 tableDefinition.put("tblName", toTableName(modelName));
+                tableDefinition.put("tblSchema", toTableName(DEFAULT_DATABASE_SCHEMA));
                 tableDefinition.put("tblComment", modelDescription);
             }
         }
@@ -238,11 +244,13 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
 
     @Override
     public void postProcessModelProperty(CodegenModel model, CodegenProperty property) {
+        /* bstorola */
+        LOGGER.info("postProcessModelProperty '" + model + "' model, property:" + property.getDataType().toUpperCase(Locale.ROOT));
+        /* estorola */
         switch (property.getDataType().toUpperCase(Locale.ROOT)) {
-            case "BOOL":
+            case "BOOLEAN":
                 processBooleanTypeProperty(model, property);
                 break;
-            case "TINYINT":
             case "SMALLINT":
             case "INT":
             case "BIGINT":
@@ -251,14 +259,15 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
             case "DECIMAL":
                 processDecimalTypeProperty(model, property);
                 break;
-            case "MEDIUMBLOB":
+            case "BYTEA":
             case "TEXT":
                 processStringTypeProperty(model, property);
                 break;
             case "DATE":
-            case "DATETIME":
+            case "TIMESTAMP":
                 processDateTypeProperty(model, property);
                 break;
+            case "JSONB": // How about JSONB handling?
             case "JSON":
                 processJsonTypeProperty(model, property);
                 break;
@@ -311,7 +320,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                     break;
                 }
                 String value = String.valueOf(enumValues.get(i));
-                columnDataTypeArguments.add(toCodegenMysqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
+                columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
             }
             columnDefinition.put("colDataType", "ENUM");
             columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
@@ -327,7 +336,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                     unsigned = true;
                 }
                 columnDefinition.put("colUnsigned", unsigned);
-                columnDefinition.put("colDataType", getMysqlMatchedIntegerDataType(min, max, unsigned));
+                columnDefinition.put("colDataType", getPostgresqlMatchedIntegerDataType(min, max, unsigned));
             }
         }
 
@@ -336,7 +345,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         } else {
             columnDefinition.put("colNotNull", false);
             try {
-                columnDefinition.put("colDefault", toCodegenMysqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
+                columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Property '" + baseName + "' of model '" + model.getName() + "' mapped to MySQL data type which doesn't support default value");
                 columnDefinition.put("colDefault", null);
@@ -391,7 +400,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                     break;
                 }
                 String value = String.valueOf(enumValues.get(i));
-                columnDataTypeArguments.add(toCodegenMysqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
+                columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
             }
             columnDefinition.put("colDataType", "ENUM");
             columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
@@ -406,8 +415,8 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
             columnDefinition.put("colDataType", "DECIMAL");
             columnDefinition.put("colUnsigned", unsigned);
             columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
-            columnDataTypeArguments.add(toCodegenMysqlDataTypeArgument(20, true));
-            columnDataTypeArguments.add(toCodegenMysqlDataTypeArgument(9, false));
+            columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(20, true));
+            columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(9, false));
         }
 
         if (Boolean.TRUE.equals(required)) {
@@ -415,7 +424,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         } else {
             columnDefinition.put("colNotNull", false);
             try {
-                columnDefinition.put("colDefault", toCodegenMysqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
+                columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Property '" + baseName + "' of model '" + model.getName() + "' mapped to MySQL data type which doesn't support default value");
                 columnDefinition.put("colDefault", null);
@@ -454,14 +463,14 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         columnDefinition.put("colName", toColumnName(baseName));
         columnDefinition.put("colDataType", "TINYINT");
         columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
-        columnDataTypeArguments.add(toCodegenMysqlDataTypeArgument(1, false));
+        columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(1, false));
 
         if (Boolean.TRUE.equals(required)) {
             columnDefinition.put("colNotNull", true);
         } else {
             columnDefinition.put("colNotNull", false);
             try {
-                columnDefinition.put("colDefault", toCodegenMysqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
+                columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Property '" + baseName + "' of model '" + model.getName() + "' mapped to MySQL data type which doesn't support default value");
                 columnDefinition.put("colDefault", null);
@@ -515,16 +524,16 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                     break;
                 }
                 String value = String.valueOf(enumValues.get(i));
-                columnDataTypeArguments.add(toCodegenMysqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
+                columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
             }
         } else if (dataType.equals("MEDIUMBLOB")) {
             columnDefinition.put("colDataType", "MEDIUMBLOB");
         } else {
-            String matchedStringType = getMysqlMatchedStringDataType(minLength, maxLength);
+            String matchedStringType = getPostgresqlMatchedStringDataType(minLength, maxLength);
             columnDefinition.put("colDataType", matchedStringType);
             if (matchedStringType.equals("CHAR") || matchedStringType.equals("VARCHAR")) {
                 columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
-                columnDataTypeArguments.add(toCodegenMysqlDataTypeArgument((maxLength != null) ? maxLength : 255, false));
+                columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument((maxLength != null) ? maxLength : 255, false));
             }
         }
 
@@ -533,7 +542,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         } else {
             columnDefinition.put("colNotNull", false);
             try {
-                columnDefinition.put("colDefault", toCodegenMysqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
+                columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Property '" + baseName + "' of model '" + model.getName() + "' mapped to MySQL data type which doesn't support default value");
                 columnDefinition.put("colDefault", null);
@@ -577,7 +586,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         } else {
             columnDefinition.put("colNotNull", false);
             try {
-                columnDefinition.put("colDefault", toCodegenMysqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
+                columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Property '" + baseName + "' of model '" + model.getName() + "' mapped to MySQL data type which doesn't support default value");
                 columnDefinition.put("colDefault", null);
@@ -624,7 +633,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         } else {
             columnDefinition.put("colNotNull", false);
             try {
-                columnDefinition.put("colDefault", toCodegenMysqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
+                columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Property '" + baseName + "' of model '" + model.getName() + "' mapped to MySQL data type which doesn't support default value");
                 columnDefinition.put("colDefault", null);
@@ -668,7 +677,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         } else {
             columnDefinition.put("colNotNull", false);
             try {
-                columnDefinition.put("colDefault", toCodegenMysqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
+                columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault(defaultValue, (String) columnDefinition.get("colDataType")));
             } catch (RuntimeException exception) {
                 LOGGER.warn("Property '" + baseName + "' of model '" + model.getName() + "' mapped to MySQL data type which doesn't support default value");
                 columnDefinition.put("colDefault", null);
@@ -687,7 +696,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param hasMore shows whether codegen has more arguments or not
      * @return generated codegen property
      */
-    public HashMap<String, Object> toCodegenMysqlDataTypeArgument(Object value, Boolean hasMore) {
+    public HashMap<String, Object> toCodegenPostgresqlDataTypeArgument(Object value, Boolean hasMore) {
         HashMap<String, Object> arg = new HashMap<String, Object>();
         if (value instanceof String) {
             arg.put("isString", true);
@@ -720,7 +729,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param mysqlDataType MySQL data type
      * @return generated codegen property
      */
-    public HashMap<String, Object> toCodegenMysqlDataTypeDefault(String defaultValue, String mysqlDataType) {
+    public HashMap<String, Object> toCodegenPostgresqlDataTypeDefault(String defaultValue, String mysqlDataType) {
         HashMap<String, Object> defaultMap = new HashMap<String, Object>();
         if (defaultValue == null || defaultValue.toUpperCase(Locale.ROOT).equals("NULL")) {
             defaultMap.put("defaultValue", "NULL");
@@ -731,9 +740,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         }
 
         switch (mysqlDataType.toUpperCase(Locale.ROOT)) {
-            case "TINYINT":
             case "SMALLINT":
-            case "MEDIUMINT":
             case "INT":
             case "BIGINT":
                 // SERIAL DEFAULT VALUE is a special case. In the definition of an integer column, it is an alias for NOT NULL AUTO_INCREMENT UNIQUE
@@ -764,16 +771,11 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                     defaultMap.put("isKeyword", false);
                 }
                 return defaultMap;
-            case "TINYBLOB":
             case "BLOB":
-            case "MEDIUMBLOB":
-            case "LONGBLOB":
-            case "TINYTEXT":
             case "TEXT":
-            case "MEDIUMTEXT":
-            case "LONGTEXT":
             case "GEOMETRY":
             case "JSON":
+            case "JSONB":
                 // The BLOB, TEXT, GEOMETRY, and JSON data types cannot be assigned a default value.
                 throw new RuntimeException("The BLOB, TEXT, GEOMETRY, and JSON data types cannot be assigned a default value");
             default:
@@ -793,7 +795,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param unsigned (optional) whether variable is unsigned or not
      * @return MySQL integer data type
      */
-    public String getMysqlMatchedIntegerDataType(Long minimum, Long maximum, Boolean unsigned) {
+    public String getPostgresqlMatchedIntegerDataType(Long minimum, Long maximum, Boolean unsigned) {
         // we can choose fit mysql data type
         // ref: https://dev.mysql.com/doc/refman/8.0/en/integer-types.html
         Long min = (minimum != null) ? minimum : -2147483648L;
@@ -803,10 +805,11 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         if (minimum != null && maximum != null && minimum > maximum) {
             LOGGER.warn("Codegen property 'minimum' cannot be greater than 'maximum'");
         }
-        if (Boolean.TRUE.equals(unsigned) && actualMin >= 0) {
+/*        if (Boolean.TRUE.equals(unsigned) && actualMin >= 0) {
             if (actualMax <= 255) {
                 return "TINYINT";
-            } else if (actualMax <= 65535) {
+            } else
+            if (actualMax <= 65535) {
                 return "SMALLINT";
             } else if (actualMax <= 16777215) {
                 return "MEDIUMINT";
@@ -815,14 +818,18 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
             } else if (actualMax > 4294967295L) {
                 return "BIGINT";
             }
-        } else {
-            if (actualMin >= -128 && actualMax <= 127) {
+        } else
+*/
+        {
+/*            if (actualMin >= -128 && actualMax <= 127) {
                 return "TINYINT";
-            } else if (actualMin >= -32768 && actualMax <= 32767) {
+            } else*/
+            if (actualMin >= -32768 && actualMax <= 32767) {
                 return "SMALLINT";
-            } else if (actualMin >= -8388608 && actualMax <= 8388607) {
+            } /*else if (actualMin >= -8388608 && actualMax <= 8388607) {
                 return "MEDIUMINT";
-            } else if (actualMin >= -2147483648 && actualMax <= 2147483647) {
+            }*/
+            else if (actualMin >= -2147483648 && actualMax <= 2147483647) {
                 return "INT";
             } else if (actualMin < -2147483648 || actualMax > 2147483647) {
                 return "BIGINT";
@@ -839,7 +846,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param maxLength (optional) codegen property
      * @return MySQL string data type
      */
-    public String getMysqlMatchedStringDataType(Integer minLength, Integer maxLength) {
+    public String getPostgresqlMatchedStringDataType(Integer minLength, Integer maxLength) {
         // we can choose fit mysql data type
         // ref: https://dev.mysql.com/doc/refman/8.0/en/string-type-overview.html
         Integer min = (minLength != null && minLength >= 0) ? minLength : 0;
@@ -897,8 +904,8 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
     }
 
     /**
-     * Converts name to valid MySQL column name
-     * Produced name must be used with backticks only, eg. `table_name`
+     * Converts name to valid PostgreSQL table or column name
+     * eg. table_name
      *
      * @param name source name
      * @return table name
@@ -955,6 +962,10 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         if (escapedName.isEmpty()) {
             throw new RuntimeException("Empty database/table/column name for property '" + name.toString() + "' not allowed");
         }
+
+        // CamelCase names to snail_case
+        escapedName = escapedName.replaceAll("([^_A-Z])([A-Z])", "$1_$2").toLowerCase();
+
         return escapedName;
     }
 

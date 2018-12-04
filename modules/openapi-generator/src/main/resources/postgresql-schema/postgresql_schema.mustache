@@ -1,0 +1,60 @@
+/* SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO"; */
+/* SET AUTOCOMMIT = 0; */
+/* START TRANSACTION; */
+/* SET time_zone = "+00:00"; */
+{{#defaultDatabaseName}}
+--
+-- Database: {{{defaultDatabaseName}}}
+--
+CREATE DATABASE IF NOT EXISTS public.{{{defaultDatabaseName}}};
+{{/defaultDatabaseName}}
+
+-- --------------------------------------------------------
+
+{{#models}}{{#model}}{{#hasVars}}{{^isArrayModel}}--
+-- Table structure{{#vendorExtensions}}{{#x-postgresqlSchema}}{{#tableDefinition}} for table {{tblSchema}}.{{tblName}}{{/tableDefinition}}{{/x-postgresqlSchema}}{{/vendorExtensions}} generated from model '{{classVarName}}'
+{{#description}}
+-- {{description}}
+{{/description}}
+--
+
+{{#vendorExtensions}}
+{{#x-postgresqlSchema}}
+{{#tableDefinition}}
+CREATE TABLE IF NOT EXISTS {{#defaultDatabaseName}}{{tblSchema}}.{{{defaultDatabaseName}}}.{{/defaultDatabaseName}}{{tblName}} (
+{{/tableDefinition}}
+{{/x-postgresqlSchema}}
+{{/vendorExtensions}}
+  {{#vars}}
+  {{#vendorExtensions}}
+  {{#x-postgresqlSchema}}
+  {{#columnDefinition}}
+  {{colName}} {{colDataType}}{{#colDataTypeArguments}}{{#-first}}({{/-first}}{{#isString}}{{/isString}}{{argumentValue}}{{#isString}}{{/isString}}{{^-last}}, {{/-last}}{{#-last}}){{/-last}}{{/colDataTypeArguments}}{{#colUnsigned}} UNSIGNED{{/colUnsigned}}{{#colNotNull}} NOT NULL{{/colNotNull}}{{#colDefault}} DEFAULT {{#isString}}{{defaultValue}}{{/isString}}{{^isString}}{{defaultValue}}{{/isString}}{{/colDefault}}{{^-last}},{{/-last}}
+  {{/columnDefinition}}
+  {{/x-postgresqlSchema}}
+  {{/vendorExtensions}}
+  {{/vars}}
+);
+
+{{#vendorExtensions}}
+{{#x-postgresqlSchema}}
+{{#tableDefinition}}
+{{#tblComment}}
+COMMENT ON TABLE {{tblSchema}}.{{tblName}} IS '{{tblComment}}';
+{{/tblComment}}
+{{/tableDefinition}}
+{{/x-postgresqlSchema}}
+{{/vendorExtensions}}
+{{#vars}}
+{{#vendorExtensions}}
+{{#x-postgresqlSchema}}
+{{#columnDefinition}}
+{{#colComment}}
+-- TODO missing tblName COMMENT ON COLUMN {{#tableDefinition}}{{tblSchema}}.{{tblName}}{{/tableDefinition}}.{{colName}} IS '{{colComment}}';
+{{/colComment}}
+{{/columnDefinition}}
+{{/x-postgresqlSchema}}
+{{/vendorExtensions}}
+{{/vars}}
+
+{{/isArrayModel}}{{/hasVars}}{{/model}}{{/models}}

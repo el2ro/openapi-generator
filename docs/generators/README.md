@@ -107,6 +107,7 @@ The following generators are available:
 
 * SCHEMA generators:
     - [mysql-schema](mysql-schema.md)
+    - [postgresql-schema](postgresql-schema.md)
 
 
 * CONFIG generators:
