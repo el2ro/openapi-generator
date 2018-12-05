@@ -75,6 +75,10 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
     protected String columnNamePrefix = "col_", columnNameSuffix = "";
     protected Boolean jsonDataTypeEnabled = true;
 
+    // List of used enum keys
+    protected Map<String, String> reservedEnumsDefinitions = new HashMap<String, String>();
+    protected ArrayList reservedEnumTypeNames = new ArrayList();
+
     public PostgresqlSchemaCodegen() {
         super();
 
@@ -321,6 +325,9 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                 }
                 String value = String.valueOf(enumValues.get(i));
                 columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
+                /* bstorola */
+                LOGGER.warn("processIntegerTypeProperty() ENUM column values " + (String) enumValues.get(i));
+                /* estorola */
             }
             columnDefinition.put("colDataType", "ENUM");
             columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
@@ -401,6 +408,9 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
                 }
                 String value = String.valueOf(enumValues.get(i));
                 columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
+                /* bstorola */
+                LOGGER.warn("processDecimalTypeProperty() ENUM column values " + (String) enumValues.get(i));
+                /* estorola */
             }
             columnDefinition.put("colDataType", "ENUM");
             columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
@@ -461,9 +471,9 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         vendorExtensions.put(CODEGEN_VENDOR_EXTENSION_KEY, postgresqlSchema);
         postgresqlSchema.put("columnDefinition", columnDefinition);
         columnDefinition.put("colName", toColumnName(baseName));
-        columnDefinition.put("colDataType", "TINYINT");
-        columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
-        columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(1, false));
+        columnDefinition.put("colDataType", "BOOLEAN");
+        /*columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
+        columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(1, false));*/
 
         if (Boolean.TRUE.equals(required)) {
             columnDefinition.put("colNotNull", true);
@@ -492,7 +502,9 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         Map<String, Object> vendorExtensions = property.getVendorExtensions();
         Map<String, Object> postgresqlSchema = new HashMap<String, Object>();
         Map<String, Object> columnDefinition = new HashMap<String, Object>();
+        Map<String, Object> enumDefinition = new HashMap<String, Object>();
         ArrayList columnDataTypeArguments = new ArrayList();
+        ArrayList enumDataArguments = new ArrayList();
         String baseName = property.getBaseName();
         String dataType = property.getDataType();
         String dataFormat = property.getDataFormat();
@@ -513,19 +525,79 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         postgresqlSchema.put("columnDefinition", columnDefinition);
         columnDefinition.put("colName", toColumnName(baseName));
 
+/*
+    NEW:
+    create type color_t as enum('blue', 'red', 'gray', 'black');
+
+    color   color_t
+
+    OLD:
+    status ENUM(placed, approved, delivered) DEFAULT NULL,
+*/
         if (Boolean.TRUE.equals(isEnum)) {
             Map<String, Object> allowableValues = property.getAllowableValues();
             List<Object> enumValues = (List<Object>) allowableValues.get("values");
-            columnDefinition.put("colDataType", "ENUM");
-            columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
+
+            postgresqlSchema.put("enumDefinition", enumDefinition);
+
+            String enumBaseName = toColumnName(baseName);
+            String enumTypeName = enumBaseName + "_ENUM";
+
+            // Gather ENUM items
             for (Integer i = 0; i < enumValues.size(); i++) {
                 if (i > ENUM_MAX_ELEMENTS - 1) {
                     LOGGER.warn("ENUM column can have maximum of " + ENUM_MAX_ELEMENTS.toString() + " distinct elements, following value will be skipped: " + (String) enumValues.get(i));
                     break;
                 }
+
                 String value = String.valueOf(enumValues.get(i));
-                columnDataTypeArguments.add(toCodegenPostgresqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
+                enumDataArguments.add(toCodegenPostgresqlDataTypeArgument(value, (Boolean) (i + 1 < enumValues.size())));
+
+                /* bstorola */
+                LOGGER.warn("processStringTypeProperty() ENUM column values " + (String) enumValues.get(i));
+                /* estorola */
             }
+
+            boolean reuseExisingEnum = false;
+
+            // Check if ENUM with same name already exists
+            while (this.reservedEnumTypeNames.contains(enumTypeName)) {
+                LOGGER.warn("Two ENUM names equals '" + enumTypeName + "', they should be the same, or ERROR");
+
+                // Check if key exists
+                String tmpVal = this.reservedEnumsDefinitions.get(enumTypeName);
+                if (tmpVal != null) {
+                    LOGGER.warn("ENUM Key found '" + enumTypeName + "', they should be the same");
+                    if (tmpVal == enumDataArguments.toString()) {
+                        LOGGER.info("ENUM is the same, reuse it");
+                        reuseExisingEnum = true;
+                        break;
+                    } else {
+                        LOGGER.warn("ENUM keys are the same but data is not");
+                        // Continue and generate new key, not optimal maybe warning should be launched
+                    }
+                }
+
+                enumTypeName = enumTypeName + String.valueOf((int)Math.floor(Math.random() * 10));
+            }
+
+            if (!reuseExisingEnum) {
+                this.reservedEnumTypeNames.add(enumTypeName);
+                this.reservedEnumsDefinitions.put(enumTypeName, enumDataArguments.toString());
+
+                enumDefinition.put("enumName", enumBaseName);
+                enumDefinition.put("enumTypeName", enumTypeName);
+            }
+            LOGGER.warn("ENUM baseName '" + baseName + "'");
+
+            // columnDefinition.put("colDataType", "ENUM");
+            columnDefinition.put("colDataType", enumTypeName);
+            columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
+
+            // columnDefinition.put("colDataTypeArguments", columnDataTypeArguments);
+            enumDefinition.put("enumDataArguments", enumDataArguments);
+
+
         } else if (dataType.equals("MEDIUMBLOB")) {
             columnDefinition.put("colDataType", "MEDIUMBLOB");
         } else {
@@ -661,6 +733,10 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         String description = property.getDescription();
         String defaultValue = property.getDefaultValue();
 
+        /* bstorola */
+        LOGGER.warn("WARN: processUnknownTypeProperty '" + baseName + "'");
+        /* estorola */
+
         if (vendorExtensions.containsKey(CODEGEN_VENDOR_EXTENSION_KEY)) {
             // user already specified schema values
             LOGGER.info("Found vendor extension in '" + baseName + "' property, autogeneration skipped");
@@ -690,7 +766,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
     }
 
     /**
-     * Generates codegen property for MySQL data type argument
+     * Generates codegen property for PostgreSQL data type argument
      *
      * @param value   argument value
      * @param hasMore shows whether codegen has more arguments or not
@@ -714,7 +790,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
             arg.put("isInteger", false);
             arg.put("isNumeric", true);
         } else {
-            LOGGER.warn("MySQL data type argument can be primitive type only. Class '" + value.getClass() + "' is provided");
+            LOGGER.warn("PostgreSQL data type argument can be primitive type only. Class '" + value.getClass() + "' is provided");
         }
         arg.put("argumentValue", value);
         arg.put("hasMore", hasMore);
@@ -821,9 +897,6 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         } else
 */
         {
-/*            if (actualMin >= -128 && actualMax <= 127) {
-                return "TINYINT";
-            } else*/
             if (actualMin >= -32768 && actualMax <= 32767) {
                 return "SMALLINT";
             } /*else if (actualMin >= -8388608 && actualMax <= 8388607) {
@@ -860,12 +933,6 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
             return "CHAR";
         } else if (actualMax <= 255) {
             return "VARCHAR";
-        } else if (actualMax > 255 && actualMax <= 65535) {
-            return "TEXT";
-        } else if (actualMax > 65535 && actualMax <= 16777215) {
-            return "MEDIUMTEXT";
-        } else if (actualMax > 16777215) {
-            return "LONGTEXT";
         }
         return "TEXT";
     }
@@ -877,7 +944,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param dataType which needs to check
      * @return true if value is correct MySQL data type, otherwise false
      */
-    public Boolean isMysqlDataType(String dataType) {
+    public Boolean isPostgresqlDataType(String dataType) {
         return (
                 postgresqlNumericTypes.contains(dataType.toUpperCase(Locale.ROOT)) ||
                         postgresqlDateAndTimeTypes.contains(dataType.toUpperCase(Locale.ROOT)) ||
@@ -895,7 +962,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @return database name
      */
     public String toDatabaseName(String name) {
-        String identifier = toMysqlIdentifier(name, databaseNamePrefix, databaseNameSuffix);
+        String identifier = toPostgresqlIdentifier(name, databaseNamePrefix, databaseNameSuffix);
         if (identifier.length() > IDENTIFIER_MAX_LENGTH) {
             LOGGER.warn("Database name cannot exceed 64 chars. Name '" + name + "' will be truncated");
             identifier = identifier.substring(0, IDENTIFIER_MAX_LENGTH);
@@ -911,7 +978,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @return table name
      */
     public String toTableName(String name) {
-        String identifier = toMysqlIdentifier(name, tableNamePrefix, tableNameSuffix);
+        String identifier = toPostgresqlIdentifier(name, tableNamePrefix, tableNameSuffix);
         if (identifier.length() > IDENTIFIER_MAX_LENGTH) {
             LOGGER.warn("Table name cannot exceed 64 chars. Name '" + name + "' will be truncated");
             identifier = identifier.substring(0, IDENTIFIER_MAX_LENGTH);
@@ -920,14 +987,14 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
     }
 
     /**
-     * Converts name to valid MySQL column name
+     * Converts name to valid Postgresql column name
      * Produced name must be used with backticks only, eg. `column_name`
      *
      * @param name source name
      * @return column name
      */
     public String toColumnName(String name) {
-        String identifier = toMysqlIdentifier(name, columnNamePrefix, columnNameSuffix);
+        String identifier = toPostgresqlIdentifier(name, columnNamePrefix, columnNameSuffix);
         if (identifier.length() > IDENTIFIER_MAX_LENGTH) {
             LOGGER.warn("Column name cannot exceed 64 chars. Name '" + name + "' will be truncated");
             identifier = identifier.substring(0, IDENTIFIER_MAX_LENGTH);
@@ -944,8 +1011,8 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param suffix when escaped name is digits only, suffix will be appended
      * @return identifier name
      */
-    public String toMysqlIdentifier(String name, String prefix, String suffix) {
-        String escapedName = escapeMysqlQuotedIdentifier(name);
+    public String toPostgresqlIdentifier(String name, String prefix, String suffix) {
+        String escapedName = escapePostgresqlQuotedIdentifier(name);
         // Database, table, and column names cannot end with space characters.
         if (escapedName.matches(".*\\s$")) {
             LOGGER.warn("Database, table, and column names cannot end with space characters. Check '" + name + "' name");
@@ -976,7 +1043,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param identifier source identifier
      * @return escaped identifier
      */
-    public String escapeMysqlUnquotedIdentifier(String identifier) {
+    public String escapePostgresqlUnquotedIdentifier(String identifier) {
         // ASCII: [0-9,a-z,A-Z$_] (basic Latin letters, digits 0-9, dollar, underscore) Extended: U+0080 .. U+FFFF
         Pattern regexp = Pattern.compile("[^0-9a-zA-z$_\\u0080-\\uFFFF]");
         Matcher matcher = regexp.matcher(identifier);
@@ -998,7 +1065,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
      * @param identifier source identifier
      * @return escaped identifier
      */
-    public String escapeMysqlQuotedIdentifier(String identifier) {
+    public String escapePostgresqlQuotedIdentifier(String identifier) {
         // ASCII: U+0001 .. U+007F Extended: U+0080 .. U+FFFF
         Pattern regexp = Pattern.compile("[^\\u0001-\\u007F\\u0080-\\uFFFF]");
         Matcher matcher = regexp.matcher(identifier);

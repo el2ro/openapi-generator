@@ -18,10 +18,20 @@ CREATE DATABASE IF NOT EXISTS public.{{{defaultDatabaseName}}};
 {{/description}}
 --
 
+{{#vars}}
+{{#vendorExtensions}}
+{{#x-postgresqlSchema}}
+{{#enumDefinition}}
+CREATE TYPE {{enumTypeName}} as ENUM{{#enumDataArguments}}{{#-first}}({{/-first}}{{#isString}}{{/isString}}'{{argumentValue}}'{{#isString}}{{/isString}}{{^-last}}, {{/-last}}{{#-last}}){{/-last}}{{/enumDataArguments}};
+{{/enumDefinition}}
+{{/x-postgresqlSchema}}
+{{/vendorExtensions}}
+{{/vars}}
+
 {{#vendorExtensions}}
 {{#x-postgresqlSchema}}
 {{#tableDefinition}}
-CREATE TABLE IF NOT EXISTS {{#defaultDatabaseName}}{{tblSchema}}.{{{defaultDatabaseName}}}.{{/defaultDatabaseName}}{{tblName}} (
+CREATE TABLE IF NOT EXISTS {{#defaultDatabaseName}}.{{{defaultDatabaseName}}}.{{/defaultDatabaseName}}{{tblSchema}}.{{tblName}} (
 {{/tableDefinition}}
 {{/x-postgresqlSchema}}
 {{/vendorExtensions}}
