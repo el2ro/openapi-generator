@@ -275,6 +275,9 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
             case "JSON":
                 processJsonTypeProperty(model, property);
                 break;
+            case "UUID":
+                processUUIDTypeProperty(model, property);
+                break;
             default:
                 processUnknownTypeProperty(model, property);
         }
@@ -718,6 +721,48 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
     }
 
     /**
+     * Processes each model's property mapped to UUID type and adds related vendor extensions
+     *
+     * @param model    model
+     * @param property model's property
+
+     processUnknownTypeProperty 'updatedByUserId baseType: UUID' model: Project dataType: UUID Format: uuid
+
+     */
+    public void processUUIDTypeProperty(CodegenModel model, CodegenProperty property) {
+        Map<String, Object> vendorExtensions = property.getVendorExtensions();
+        Map<String, Object> postgresqlSchema = new HashMap<String, Object>();
+        Map<String, Object> columnDefinition = new HashMap<String, Object>();
+        String baseName = property.getBaseName();
+        String dataType = property.getDataType();
+        Boolean required = property.getRequired();
+        String description = property.getDescription();
+        String defaultValue = property.getDefaultValue();
+
+        if (vendorExtensions.containsKey(CODEGEN_VENDOR_EXTENSION_KEY)) {
+            // user already specified schema values
+            LOGGER.info("Found vendor extension in '" + baseName + "' property, autogeneration skipped");
+            return;
+        }
+
+        vendorExtensions.put(CODEGEN_VENDOR_EXTENSION_KEY, postgresqlSchema);
+        postgresqlSchema.put("columnDefinition", columnDefinition);
+        columnDefinition.put("colName", toColumnName(baseName));
+        columnDefinition.put("colDataType", dataType);
+
+        // TODO check if autoincrement
+        // columnDefinition.put("colDefault", toCodegenPostgresqlDataTypeDefault("uuid_generate_v4()", dataType));
+        // estorola
+        
+        //columnDefinition.put("colDefault", null);
+
+        if (description != null) {
+            columnDefinition.put("colComment", description);
+        }
+    }
+
+
+    /**
      * Processes each model's property not mapped to any type and adds related vendor extensions
      * Most of time it's related to referenced properties eg. \Model\User
      *
@@ -734,7 +779,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         String defaultValue = property.getDefaultValue();
 
         /* bstorola */
-        LOGGER.warn("WARN: processUnknownTypeProperty '" + baseName + "'");
+        LOGGER.warn("WARN: processUnknownTypeProperty '" + baseName + "' baseType: "+ property.getBaseType() +" model: " + model.getName() + " dataType: " + property.getDataType() + " Format: " + property.getDataFormat() );
         /* estorola */
 
         if (vendorExtensions.containsKey(CODEGEN_VENDOR_EXTENSION_KEY)) {
@@ -1031,7 +1076,7 @@ public class PostgresqlSchemaCodegen extends DefaultCodegen implements CodegenCo
         }
 
         // CamelCase names to snail_case
-        escapedName = escapedName.replaceAll("([^_A-Z])([A-Z])", "$1_$2").toLowerCase();
+        escapedName = escapedName.replaceAll("([^_A-Z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
 
         return escapedName;
     }
